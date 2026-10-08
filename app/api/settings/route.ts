@@ -1,10 +1,12 @@
 import { clearConfigCookie, configCookie, encryptConfig, normalizeGatewayUrl, readConfig, testOpenClaw } from "@/lib/openclaw";
+import { env } from "cloudflare:workers";
 
 export const runtime = "edge";
 
 export async function GET(request: Request) {
   const config = await readConfig(request);
-  return Response.json(config ? { connected: true, baseUrl: config.baseUrl, agentId: config.agentId } : { connected: false });
+  const managed = Boolean(env.OPENCLAW_GATEWAY_URL && env.OPENCLAW_API_TOKEN);
+  return Response.json(config ? { connected: true, baseUrl: config.baseUrl, agentId: config.agentId, managed } : { connected: false, managed });
 }
 
 export async function POST(request: Request) {
@@ -22,5 +24,6 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE() {
-  return Response.json({ connected: false }, { headers: { "Set-Cookie": clearConfigCookie() } });
+  const managed = Boolean(env.OPENCLAW_GATEWAY_URL && env.OPENCLAW_API_TOKEN);
+  return Response.json({ connected: managed, managed }, { headers: { "Set-Cookie": clearConfigCookie() } });
 }

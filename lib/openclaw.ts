@@ -25,7 +25,7 @@ export function normalizeGatewayUrl(value: string) {
   const url = new URL(value.trim());
   const local = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
   if (url.protocol !== "https:" && !(local && url.protocol === "http:")) throw new Error("OpenClaw 网关必须使用 HTTPS 地址");
-  url.pathname = url.pathname.replace(/\/+$/, "");
+  url.pathname = url.pathname.replace(/\/+$/, "").replace(/\/v1$/, "");
   url.search = "";
   url.hash = "";
   return url.toString().replace(/\/$/, "");
@@ -39,12 +39,21 @@ export async function encryptConfig(config: OpenClawConfig) {
 
 export async function readConfig(request: Request): Promise<OpenClawConfig | null> {
   const pair = request.headers.get("cookie")?.split(/;\s*/).find((item) => item.startsWith(`${COOKIE}=`));
-  if (!pair) return null;
-  try {
-    const [iv, encrypted] = decodeURIComponent(pair.slice(COOKIE.length + 1)).split(".");
-    const clear = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(iv) }, await encryptionKey(), base64ToBytes(encrypted));
-    return JSON.parse(new TextDecoder().decode(clear)) as OpenClawConfig;
-  } catch { return null; }
+  if (pair) {
+    try {
+      const [iv, encrypted] = decodeURIComponent(pair.slice(COOKIE.length + 1)).split(".");
+      const clear = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(iv) }, await encryptionKey(), base64ToBytes(encrypted));
+      return JSON.parse(new TextDecoder().decode(clear)) as OpenClawConfig;
+    } catch { /* fall back to a server-managed adapter */ }
+  }
+  if (env.OPENCLAW_GATEWAY_URL && env.OPENCLAW_API_TOKEN) {
+    return {
+      baseUrl: normalizeGatewayUrl(env.OPENCLAW_GATEWAY_URL),
+      token: env.OPENCLAW_API_TOKEN,
+      agentId: env.OPENCLAW_AGENT_ID || "default",
+    };
+  }
+  return null;
 }
 
 export function configCookie(value: string) {

@@ -1,9 +1,16 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 
 export const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const runtimeRoot = process.env.SITES_RUNTIME_ROOT || path.join(projectRoot, ".sites-runtime");
+
+try {
+  loadEnvFile(path.join(projectRoot, ".env.local"));
+} catch {
+  // Local environment configuration is optional.
+}
 
 process.env.CLOUDFLARE_CF_FETCH_ENABLED ||= "false";
 process.env.WRANGLER_SEND_METRICS ||= "false";
