@@ -38,6 +38,13 @@ export async function encryptConfig(config: OpenClawConfig) {
 }
 
 export async function readConfig(request: Request): Promise<OpenClawConfig | null> {
+  if (env.OPENCLAW_GATEWAY_URL && env.OPENCLAW_API_TOKEN) {
+    return {
+      baseUrl: normalizeGatewayUrl(env.OPENCLAW_GATEWAY_URL),
+      token: env.OPENCLAW_API_TOKEN,
+      agentId: env.OPENCLAW_AGENT_ID || "default",
+    };
+  }
   const pair = request.headers.get("cookie")?.split(/;\s*/).find((item) => item.startsWith(`${COOKIE}=`));
   if (pair) {
     try {
@@ -45,13 +52,6 @@ export async function readConfig(request: Request): Promise<OpenClawConfig | nul
       const clear = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(iv) }, await encryptionKey(), base64ToBytes(encrypted));
       return JSON.parse(new TextDecoder().decode(clear)) as OpenClawConfig;
     } catch { /* fall back to a server-managed adapter */ }
-  }
-  if (env.OPENCLAW_GATEWAY_URL && env.OPENCLAW_API_TOKEN) {
-    return {
-      baseUrl: normalizeGatewayUrl(env.OPENCLAW_GATEWAY_URL),
-      token: env.OPENCLAW_API_TOKEN,
-      agentId: env.OPENCLAW_AGENT_ID || "default",
-    };
   }
   return null;
 }
