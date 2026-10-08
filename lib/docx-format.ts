@@ -80,3 +80,22 @@ export function inspectDocx(buffer: ArrayBuffer) {
     return { available: false, reason: error instanceof Error ? error.message : "DOCX 解析失败" };
   }
 }
+
+function decodeXml(value: string) {
+  return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+}
+
+export function extractDocxText(buffer: ArrayBuffer) {
+  const files = unzipSync(new Uint8Array(buffer));
+  const xml = files["word/document.xml"] ? new TextDecoder().decode(files["word/document.xml"]) : "";
+  if (!xml) throw new Error("DOCX 中未找到可读取的正文");
+  return decodeXml(xml
+    .replace(/<w:tab\b[^>]*\/>/g, "\t")
+    .replace(/<w:br\b[^>]*\/>/g, "\n")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<\/w:tr>/g, "\n")
+    .replace(/<\/w:tc>/g, "\t")
+    .replace(/<[^>]+>/g, ""))
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
