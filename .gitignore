@@ -40,15 +40,14 @@ yarn-error.log*
 next-env.d.ts
 /dist/
 /.wrangler/
-/logs/*.log
-!/logs/.gitkeep
 # Checkout-local execution profile and tool state; never publish them.
 /.sites-runtime/
 /.agents/
 /.codex/
 /outputs/
 /work/
-/logs/
+/logs/*.log
+!/logs/.gitkeep
 /data/
 /docguard-inbox/
 /docguard-results/

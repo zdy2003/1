@@ -11,7 +11,7 @@
     "build": "node scripts/run-framework.mjs build",
     "prestart": "npm run build",
     "start": "node scripts/start-worker.mjs",
-    "start:node": "node server-node.js",
+    "start:node": "node --env-file-if-exists=.env.local server-node.js",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
@@ -30,7 +30,7 @@
     "fflate": "^0.8.3",
     "input-otp": "^1.4.2",
     "lucide-react": "^1.31.0",
-    "multer": "^1.4.5-lts.1",
+    "multer": "^2.4.0",
     "next": "16.3.4",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.6.7",

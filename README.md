@@ -29,6 +29,20 @@
 
 ## 本地开发
 
+### Node.js 审核接口
+
+将 `.env.example` 复制为 `.env.local`，填写 OpenClaw Gateway 和 Token 后启动：
+
+```bash
+cp .env.example .env.local
+npm install
+npm run start:node
+```
+
+`start:node` 会自动读取 `.env.local`，默认在 `http://127.0.0.1:3001` 提供 `POST /api/review`。无需再手动导出环境变量。
+
+### Cloudflare 本地预览
+
 ```bash
 cp .env.example .env.local
 cp .dev.vars.example .dev.vars
@@ -46,7 +60,13 @@ npm start
 
 ## 运行日志与排错
 
-`npm start` 会先执行生产构建，避免 `dist` 中的旧接口代码继续运行。启动后的控制台输出、请求状态和审核诊断会同时追加到：
+Node.js 服务的启动信息、请求状态和审核诊断会同时追加到：
+
+```text
+logs/docguard.log
+```
+
+Cloudflare 本地预览使用：
 
 ```text
 logs/runtime-YYYY-MM-DD.log
@@ -61,4 +81,4 @@ logs/runtime-YYYY-MM-DD.log
 - `output_parse_failed` / `output_repaired`：模型 JSON 输出解析失败及自动修复
 - `review_completed` / `review_failed`：任务最终状态
 
-日志不会记录 OpenClaw Token、上传文件正文或完整模型输出。遇到 `Invalid input` 时，先确认使用 `npm start` 重新构建，再检查最新日志中的 `openclaw_request` 和 `openclaw_error`。
+日志不会记录 OpenClaw Token、上传文件正文或完整模型输出。遇到接口错误时，可用响应中的 `requestId` 在 `logs/docguard.log` 中定位同一次审核请求。

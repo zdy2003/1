@@ -1,6 +1,6 @@
 import { extractDocxText, inspectDocx } from "@/lib/docx-format";
 import { getDatabase } from "@/lib/db-node";
-import { saveFile, saveResult, getUploadDir, getResultDir } from "@/lib/files-node";
+import { saveFile, saveResult } from "@/lib/files-node";
 import { readConfig, extractOpenClawText, parseJsonResult } from "@/lib/openclaw-node";
 import { logger } from "@/lib/logger";
 import { randomUUID } from "crypto";
@@ -144,9 +144,9 @@ export async function POST(request: Request) {
       tenderBytes && tenderFile ? `reviews/${reviewId}/tender-${tenderFile.name}` : null;
 
     // 保存文件到本地
-    saveFile(bidKey, bidBytes, bidFile.type);
+    saveFile(bidKey, bidBytes);
     if (tenderKey && tenderBytes && tenderFile) {
-      saveFile(tenderKey, tenderBytes, tenderFile.type);
+      saveFile(tenderKey, tenderBytes);
     }
 
     // 保存到数据库
@@ -202,18 +202,21 @@ export async function POST(request: Request) {
       bidFile: bidFile.name,
     });
 
+    const input = [{ type: "message", role: "user", content }];
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${config.token}`,
+      "Content-Type": "application/json",
+    };
+    if (config.agentId !== "default") headers["x-openclaw-agent-id"] = config.agentId;
+
     const response = await fetch(`${config.baseUrl}/v1/responses`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-        "Content-Type": "application/json",
-        "x-openclaw-agent-id": config.agentId,
-      },
+      headers,
       body: JSON.stringify({
         model: `openclaw/${config.agentId}`,
         user: `bidwise:${projectId || "standalone"}`,
         stream: false,
-        input: [{ role: "user", content }],
+        input,
         max_output_tokens: 12000,
       }),
     });

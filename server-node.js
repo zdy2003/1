@@ -4,7 +4,8 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
 import Database from "better-sqlite3";
-import { mkdirSync, appendFileSync, existsSync, writeFileSync, unlinkSync, readFileSync } from "fs";
+import { mkdirSync, appendFileSync, existsSync, writeFileSync, unlinkSync } from "fs";
+import { unzipSync } from "fflate";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -87,12 +88,33 @@ function validateFile(file, label) {
   if (file.size > MAX_FILE_SIZE) throw new Error(`${label}不能超过 5MB`);
 }
 
-function bytesToBase64(bytes) {
-  let value = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    value += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+function extractDocxText(buffer) {
+  const files = unzipSync(new Uint8Array(buffer));
+  const documentXml = files["word/document.xml"];
+  if (!documentXml) throw new Error("DOCX 文件缺少 word/document.xml，文件可能已损坏");
+  return new TextDecoder()
+    .decode(documentXml)
+    .replace(/<w:tab\/?\s*>/g, "\t")
+    .replace(/<w:br\/?\s*>/g, "\n")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function filePart(file) {
+  const ext = extensionOf(file.originalname);
+  if (ext === "docx") {
+    const text = extractDocxText(file.buffer);
+    return { type: "input_file", source: { type: "base64", media_type: "text/plain", data: Buffer.from(text, "utf8").toString("base64"), filename: `${file.originalname}.txt` } };
   }
-  return btoa(value);
+  const mediaType = ext === "pdf" ? "application/pdf" : ext === "md" ? "text/markdown" : "text/plain";
+  return { type: "input_file", source: { type: "base64", media_type: mediaType, data: file.buffer.toString("base64"), filename: file.originalname } };
 }
 
 function saveResult(fileName, data) {
@@ -114,7 +136,6 @@ function parseJsonResult(text) {
 }
 
 function extractOpenClawText(data) {
-  log("DEBUG", "OpenClaw response data", JSON.stringify(data).slice(0, 500));
   if (data.output_text) return data.output_text;
   return data.output?.flatMap(item => item.content ?? [])
     .filter(part => part.type === "output_text" || part.type === "text")
@@ -123,8 +144,11 @@ function extractOpenClawText(data) {
 
 app.post("/api/review", upload.fields([{ name: "bidFile", maxCount: 1 }, { name: "tenderFile", maxCount: 1 }]), async (req, res) => {
   const started = Date.now();
+  const requestId = randomUUID();
   let reviewId = "";
-  log("INFO", "========== Review request started ==========");
+  let bidPath = null;
+  let tenderPath = null;
+  log("INFO", "Review request started", { requestId });
 
   try {
     const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL;
@@ -151,12 +175,11 @@ app.post("/api/review", upload.fields([{ name: "bidFile", maxCount: 1 }, { name:
 
     reviewId = randomUUID();
     const bidKey = `reviews/${reviewId}/bid-${bidFile.originalname}`;
-    const bidPath = join(UPLOAD_DIR, bidKey.replace(/\//g, "_"));
+    bidPath = join(UPLOAD_DIR, bidKey.replace(/\//g, "_"));
     writeFileSync(bidPath, bidFile.buffer);
     log("INFO", "Bid file saved", { bidKey, path: bidPath });
 
     let tenderKey = null;
-    let tenderPath = null;
     if (tenderFile) {
       tenderKey = `reviews/${reviewId}/tender-${tenderFile.originalname}`;
       tenderPath = join(UPLOAD_DIR, tenderKey.replace(/\//g, "_"));
@@ -176,28 +199,26 @@ app.post("/api/review", upload.fields([{ name: "bidFile", maxCount: 1 }, { name:
 必须只输出一个 JSON 对象，不要使用 Markdown 代码块。结构如下：
 {"score":0到100,"summary":"结论","pageCount":0,"reviewedAreas":["领域"],"findings":[{"id":"编号","severity":"高风险|中风险|低风险","category":"格式|内容","title":"标题","detail":"详情","location":"位置","suggestion":"建议","evidence":"证据"}]}`;
 
-    const fileContent = readFileSync(bidPath);
-    log("INFO", "File content read", { size: fileContent.length, path: bidPath });
-
     const content = [
       { type: "input_text", text: prompt },
-      { type: "input_file", source: { type: "base64", media_type: bidFile.mimetype || "application/octet-stream", data: bytesToBase64(fileContent), filename: bidFile.originalname } }
+      filePart(bidFile),
     ];
+    if (tenderFile) content.push(filePart(tenderFile));
 
-    log("INFO", "Calling OpenClaw agent...", { url: `${baseUrl}/v1/responses`, agentId, model: `openclaw/${agentId}` });
+    const input = [{ type: "message", role: "user", content }];
+    const headers = { Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json" };
+    if (agentId !== "default") headers["x-openclaw-agent-id"] = agentId;
+
+    log("INFO", "Calling OpenClaw agent", { requestId, reviewId, gatewayOrigin: new URL(baseUrl).origin, agentId, model: `openclaw/${agentId}`, inputType: input[0].type, contentTypes: content.map((part) => part.type), fileCount: content.filter((part) => part.type === "input_file").length });
 
     const response = await fetch(`${baseUrl}/v1/responses`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        "Content-Type": "application/json",
-        "x-openclaw-agent-id": agentId,
-      },
+      headers,
       body: JSON.stringify({
         model: `openclaw/${agentId}`,
         user: `bidwise:standalone`,
         stream: false,
-        input: [{ role: "user", content }],
+        input,
         max_output_tokens: 12000,
       }),
     });
@@ -205,8 +226,6 @@ app.post("/api/review", upload.fields([{ name: "bidFile", maxCount: 1 }, { name:
     log("INFO", "OpenClaw response status", { status: response.status, ok: response.ok });
 
     const responseText = await response.text();
-    log("DEBUG", "OpenClaw raw response", responseText.slice(0, 1000));
-
     let data;
     try {
       data = JSON.parse(responseText);
@@ -221,7 +240,7 @@ app.post("/api/review", upload.fields([{ name: "bidFile", maxCount: 1 }, { name:
     }
 
     const text = extractOpenClawText(data);
-    log("INFO", "Extracted text from OpenClaw response", { textLength: text.length, textPreview: text.slice(0, 200) });
+    log("INFO", "OpenClaw response received", { requestId, reviewId, responseId: data.id || null, textLength: text.length });
 
     if (!text) {
       log("ERROR", "No text in OpenClaw response");
@@ -229,7 +248,7 @@ app.post("/api/review", upload.fields([{ name: "bidFile", maxCount: 1 }, { name:
     }
 
     const result = parseJsonResult(text);
-    log("INFO", "Parsed result", JSON.stringify(result).slice(0, 500));
+    log("INFO", "Review result parsed", { requestId, reviewId, score: result.score, findingCount: result.findings?.length || 0 });
 
     const counts = {
       high: result.findings?.filter(f => f.severity === "高风险").length || 0,
@@ -248,11 +267,7 @@ app.post("/api/review", upload.fields([{ name: "bidFile", maxCount: 1 }, { name:
     const resultPath = saveResult(`review-${reviewId}.json`, JSON.stringify(result, null, 2));
     log("INFO", "Review result saved", { reviewId, score: result.score, resultPath });
 
-    // 清理上传文件
-    try { unlinkSync(bidPath); } catch (e) { log("WARN", "Failed to delete bid file", { error: e.message }); }
-    try { if (tenderPath) unlinkSync(tenderPath); } catch (e) { log("WARN", "Failed to delete tender file", { error: e.message }); }
-
-    log("INFO", "========== Review completed successfully ==========", { reviewId, durationMs });
+    log("INFO", "Review completed successfully", { requestId, reviewId, durationMs });
 
     res.json({
       ...result,
@@ -265,12 +280,15 @@ app.post("/api/review", upload.fields([{ name: "bidFile", maxCount: 1 }, { name:
     });
   } catch (error) {
     const message = error.message || "审核失败";
-    log("ERROR", "========== Review failed ==========", { error: message, stack: error.stack, reviewId });
+    log("ERROR", "Review failed", { requestId, error: message, stack: error.stack, reviewId });
     if (reviewId) {
       db.prepare("UPDATE reviews SET status='failed',error=?,completed_at=?,duration_ms=? WHERE id=?")
         .run(message, new Date().toISOString(), Date.now() - started, reviewId);
     }
-    res.status(500).json({ error: message });
+    res.status(500).json({ error: message, requestId });
+  } finally {
+    try { if (bidPath) unlinkSync(bidPath); } catch (e) { log("WARN", "Failed to delete bid file", { requestId, error: e.message }); }
+    try { if (tenderPath) unlinkSync(tenderPath); } catch (e) { log("WARN", "Failed to delete tender file", { requestId, error: e.message }); }
   }
 });
 

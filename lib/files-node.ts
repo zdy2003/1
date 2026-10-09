@@ -8,7 +8,7 @@ export function ensureDir(dir: string) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
-export function saveFile(key: string, data: ArrayBuffer, contentType?: string): void {
+export function saveFile(key: string, data: ArrayBuffer): void {
   ensureDir(UPLOAD_DIR);
   const filePath = join(UPLOAD_DIR, key.replace(/\//g, "_"));
   writeFileSync(filePath, Buffer.from(data));
@@ -36,6 +36,3 @@ export function saveResult(fileName: string, data: string): string {
   writeFileSync(filePath, data, "utf-8");
   return filePath;
 }
-
-export function getUploadDir() { return UPLOAD_DIR; }
-export function getResultDir() { return RESULT_DIR; }
