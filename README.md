@@ -43,3 +43,22 @@ npm start
 ## 文件限制
 
 默认接受 PDF、DOCX、TXT、Markdown，单个文件不超过 5MB。旧版 DOC 需先转换为 DOCX 或 PDF。若 OpenClaw 网关调整了 `gateway.http.endpoints.responses.files.maxBytes`，可同步修改平台的上传限制。
+
+## 运行日志与排错
+
+`npm start` 会先执行生产构建，避免 `dist` 中的旧接口代码继续运行。启动后的控制台输出、请求状态和审核诊断会同时追加到：
+
+```text
+logs/runtime-YYYY-MM-DD.log
+```
+
+审核日志使用同一个 `requestId` 和 `reviewId` 串联以下阶段：
+
+- `upload_validated`：文件类型和大小校验通过
+- `upload_persisted`：文件与审核任务已保存
+- `openclaw_request`：已向 OpenClaw 发送请求，并记录输入块类型
+- `openclaw_error`：网关拒绝请求
+- `output_parse_failed` / `output_repaired`：模型 JSON 输出解析失败及自动修复
+- `review_completed` / `review_failed`：任务最终状态
+
+日志不会记录 OpenClaw Token、上传文件正文或完整模型输出。遇到 `Invalid input` 时，先确认使用 `npm start` 重新构建，再检查最新日志中的 `openclaw_request` 和 `openclaw_error`。

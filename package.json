@@ -9,6 +9,7 @@
     "install:ci": "node scripts/install-ci.mjs",
     "dev": "node scripts/run-framework.mjs dev",
     "build": "node scripts/run-framework.mjs build",
+    "prestart": "npm run build",
     "start": "node scripts/start-worker.mjs",
     "start:node": "node server-node.js",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
