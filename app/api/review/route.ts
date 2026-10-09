@@ -78,12 +78,9 @@ export async function POST(request: Request) {
 只报告有证据的问题；高风险用于可能废标或实质性不响应，中风险用于重要缺失或矛盾，低风险用于一般规范性问题。`;
     const content: Array<Record<string, unknown>> = [{ type: "input_text", text: prompt }, filePart(bidFile, bidBytes)];
     if (tenderBytes && tenderFile instanceof File) content.push(filePart(tenderFile, tenderBytes));
-    const input = [{ type: "message", role: "user", content }];
-    const headers: Record<string, string> = { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json" };
-    if (config.agentId && config.agentId !== "default") headers["x-openclaw-agent-id"] = config.agentId;
     const response = await fetch(`${config.baseUrl}/v1/responses`, {
-      method: "POST", headers,
-      body: JSON.stringify({ model: `openclaw/${config.agentId}`, user: `bidwise:${projectId || "standalone"}`, stream: false, input, max_output_tokens: 12000 }),
+      method: "POST", headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json", "x-openclaw-agent-id": config.agentId },
+      body: JSON.stringify({ model: `openclaw/${config.agentId}`, user: `bidwise:${projectId || "standalone"}`, stream: false, input: [{ role: "user", content }], max_output_tokens: 12000 }),
     });
     const data = await response.json().catch(() => ({})) as { id?: string; error?: { message?: string }; output_text?: string; output?: Array<{content?:Array<{type?:string;text?:string}>}> };
     if (!response.ok) throw new Error(data.error?.message || `OpenClaw 审核失败（HTTP ${response.status}）`);

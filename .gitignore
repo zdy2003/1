@@ -46,3 +46,7 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+/logs/
+/data/
+/docguard-inbox/
+/docguard-results/
